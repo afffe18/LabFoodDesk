@@ -275,7 +275,7 @@ const GroupOrderSplit = (props: Props) => {
                   className={`btn join-item btn-sm ${costMode === "group" ? "btn-primary" : "btn-outline"}`}
                   onClick={() => setCostMode("group")}
                 >
-                  nur Gruppen-Artikel
+                  Nur Gruppen-Artikel
                 </button>
               </div>
               <label
@@ -409,8 +409,7 @@ const GroupOrderSplit = (props: Props) => {
           <div className="flex flex-1 flex-row items-center gap-2">
             <p className="text-sm">Gezahlt von:</p>
             <select
-              className={`select select-bordered select-sm w-full max-w-xs font-bold ${
-                destinationError ? "select-error" : ""
+              className={`select select-bordered select-sm w-full max-w-xs font-bold ${destinationError ? "select-error" : ""
                 }`}
               id="sel-dest-user"
               value={destination}

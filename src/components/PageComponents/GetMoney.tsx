@@ -1,6 +1,6 @@
 import { useSession } from "next-auth/react"
 import { type ReactNode, useRef, useState } from "react"
-import { AlertCircle, AlertTriangle, ArrowDown, RotateCcw, X } from "lucide-react"
+import { AlertCircle, AlertTriangle, ArrowDown, Undo, X } from "lucide-react"
 import ActionResponsePopup, {
   animate,
   type AnimationHandle,
@@ -127,9 +127,8 @@ const NoteInput = (props: { value: string; onChange: (value: string) => void }) 
 
 const SubmitButton = (props: { disabled: boolean; label?: string; onClick: () => void }) => (
   <button
-    className={`btn btn-lg gap-2 ${
-      props.disabled ? "btn-disabled" : "btn-warning hover:btn-warning-focus"
-    } transition-all duration-200`}
+    className={`btn btn-lg gap-2 ${props.disabled ? "btn-disabled" : "btn-warning hover:btn-warning-focus"
+      } transition-all duration-200`}
     onClick={props.onClick}
     disabled={props.disabled}
   >
@@ -370,7 +369,7 @@ const GroupRequestForm = (props: FormProps) => {
               title="Automatisch berechnen"
               aria-label="Automatisch berechnen"
             >
-              <RotateCcw className="h-3 w-3" />
+              <Undo className="h-3 w-3" />
             </button>
           ) : (shares[index] ?? 0) < 0 ? (
             // automatic share is negative: the fixed shares exceed the whole
@@ -434,7 +433,7 @@ const GroupRequestForm = (props: FormProps) => {
             checked={includeSelf}
             onChange={(e) => toggleIncludeSelf(e.target.checked)}
           />
-          <span className="label-text">Ich bin auch beteiligt (mein Anteil wird nicht eingefordert)</span>
+          <span className="label-text">Ich bin auch beteiligt</span>
         </label>
       </div>
 

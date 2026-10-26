@@ -52,13 +52,13 @@ const ItemForm = (props: Props) => {
     () =>
       props.id
         ? {
-            ...currentItem.data,
-            account: currentItem.data?.accountId,
-            categories: currentItem.data?.categories.map((category) => ({
-              label: category.name,
-              value: category.id,
-            })),
-          }
+          ...currentItem.data,
+          account: currentItem.data?.accountId,
+          categories: currentItem.data?.categories.map((category) => ({
+            label: category.name,
+            value: category.id,
+          })),
+        }
         : { name: "", price: 0, deposit: 0, for_grouporders: false, categories: [] },
     [currentItem.data, props.id],
   )
@@ -173,7 +173,7 @@ const ItemForm = (props: Props) => {
             {errors.account && <p>{errors.account.message}</p>}
           </div>
           <div>
-            <input type="checkbox" className="mr-3" {...addItemRegister("for_grouporders")} />
+            <input type="checkbox" className="checkbox checkbox-sm mr-3" {...addItemRegister("for_grouporders")} />
             <span className="label-text text-base">(Nur) Für Gruppenkäufe verwenden</span>
             {errors.for_grouporders && <p>{errors.for_grouporders.message}</p>}
           </div>
