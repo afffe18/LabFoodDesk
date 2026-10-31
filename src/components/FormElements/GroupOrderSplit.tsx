@@ -3,7 +3,8 @@ import { Coins } from "lucide-react"
 import { useSession } from "next-auth/react"
 import { type ReactNode, useMemo, useRef, useState } from "react"
 import { z } from "zod"
-import { calculateAdditionalPricing } from "~/helper/dataProcessing"
+import { calculateAdditionalPricing, categoryFeesAsMarkups } from "~/helper/dataProcessing"
+import { BILLING_TOLERANCE } from "~/helper/globalTypes"
 import { type Tid, id } from "~/helper/zodTypes"
 import { type RouterOutputs, api } from "~/utils/api"
 import ActionResponsePopup, { type AnimationHandle, animate } from "../General/ActionResponsePopup"
@@ -142,8 +143,6 @@ const GroupOrderSplit = (props: Props) => {
     0,
   )
   const groupAmount = costMode === "total" ? Math.max(0, totalAmount - itemBuysSum) : totalAmount
-  // the total has to cover at least the single items
-  const totalAmountTooLow = costMode === "total" && totalAmount > 0 && totalAmount < itemBuysSum
   const overwriteUserExpence = (cost: number, key: string) => {
     setOverwrittenCosts((previous) => ({
       ...previous,
@@ -213,9 +212,31 @@ const GroupOrderSplit = (props: Props) => {
     return overwrittenItemsSum > groupAmount ? overwrittenItemsSum : undefined
   }, [split, groupAmount])
 
+  // what the shopper paid (incl. single items) - the billed prices have to add up to it
+  const expectedTotal =
+    totalItems === 0
+      ? itemBuysSum
+      : allUsersOverwritten !== undefined
+        ? allUsersOverwritten + itemBuysSum
+        : costMode === "total"
+          ? totalAmount
+          : totalAmount + itemBuysSum
+  const billedTotal =
+    split
+      .flatMap((userContent) => userContent.procurementWishs)
+      .flatMap((proc) => proc.items)
+      .reduce((sum, item) => sum + item.finalCost, 0) + itemBuysSum
+  // the total has to cover at least the single items
+  const totalAmountTooLow =
+    totalItems > 0 && allUsersOverwritten === undefined && costMode === "total" && totalAmount < itemBuysSum
+  const totalMismatch = Number.isNaN(expectedTotal) || Math.abs(billedTotal - expectedTotal) > BILLING_TOLERANCE
+
   const closeGroupOrderRequest = api.groupOrders.close.useMutation()
 
   const closeGroupOrder = async () => {
+    if (totalMismatch) {
+      return
+    }
     if (!destination) {
       setDestinationError(true)
       return
@@ -238,6 +259,7 @@ const GroupOrderSplit = (props: Props) => {
         groupId: group.id,
         destination,
         split: splitSubmit ?? {},
+        expectedTotal,
         itemBuyPrices: pendingItemBuys.flatMap((order) => {
           const price = itemBuyPrices[order.id]
           return price === undefined ? [] : [{ id: order.id, price }]
@@ -304,6 +326,17 @@ const GroupOrderSplit = (props: Props) => {
                 </p>
               )}
             </div>
+            {totalAmountTooLow ? (
+              <p className="mt-1 text-sm text-error">
+                Die Gesamtkosten müssen mindestens die Einzel-Artikel ({itemBuysSum.toFixed(2)}€) abdecken.
+              </p>
+            ) : (
+              totalMismatch && (
+                <p className="mt-1 text-sm text-error">
+                  Die angepassten Kosten ergeben zusammen nicht die Gesamtkosten.
+                </p>
+              )
+            )}
             <div className="divider text-sm text-base-content/60">Gruppen-Artikel</div>
             <div className="overflow-x-auto">
               <table className="table">
@@ -378,7 +411,7 @@ const GroupOrderSplit = (props: Props) => {
                           +{" "}
                           {calculateAdditionalPricing(
                             price,
-                            order.items.flatMap((mapping) => mapping.item.categories),
+                            categoryFeesAsMarkups(order.categoryFees),
                           ).toFixed(2)}
                           €
                         </span>
@@ -425,6 +458,7 @@ const GroupOrderSplit = (props: Props) => {
             </select>
             <button
               className="btn btn-primary btn-sm"
+              disabled={totalMismatch}
               onClick={() => setCloseGroupOrderModalOpen(true)}
             >
               <Coins className="h-4 w-4" />

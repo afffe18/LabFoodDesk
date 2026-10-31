@@ -108,10 +108,11 @@ model Category {
 model ClearingAccount {
   id          String        @id @default(cuid())
   name        String
-  balance     Float         @default(0)
+  balance     Float                    @default(0)
   categories  Category[]
   items       Item[]
   transaction Transaction[]
+  buyFees     TransactionCategoryFee[]
 }
 
 model ItemCategoryMapping {
@@ -125,6 +126,21 @@ model ItemCategoryMapping {
   transactionId String
 
   @@index([canonicalItemId])
+}
+
+// markup of a category as it was when a group-order buy was reserved - the category itself can be
+// edited or (via ItemCategoryMapping) linked to a later buy before the group order is closed
+model TransactionCategoryFee {
+  id                  String           @id @default(cuid())
+  transaction         Transaction      @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  transactionId       String
+  categoryId          String // no relation - only for reference, the snapshot has to outlive the category
+  markupPercentage    Int?
+  markupFixed         Float?
+  markupDestination   ClearingAccount? @relation(fields: [markupDestinationId], references: [id], onDelete: NoAction)
+  markupDestinationId String?
+
+  @@index([transactionId])
 }
 
 model ProcurementItemBilling {
@@ -146,6 +162,8 @@ model Transaction {
   canceledByUserId       String?
   items                  ItemCategoryMapping[]
   procurementItems       ProcurementItemBilling[]
+  // only for reserved group-order buys (type=4) - their fees are calculated on close
+  categoryFees           TransactionCategoryFee[]
   amountWithoutFees      Float? // without category-markup
   totalAmount            Float // without category-markup
   createdAt              DateTime                 @default(now())

@@ -6,13 +6,13 @@ import { splitSubmitSchema } from "~/components/FormElements/GroupOrderSplit"
 import { validationSchema as groupOrderValidationSchema } from "~/components/Forms/GrouporderForm"
 import { validationSchema as groupOrderTemplateValidationSchema } from "~/components/Forms/GrouporderTemplateForm"
 import { env } from "~/env.mjs"
-import { calculateFeesPerCategory, timeToDate } from "~/helper/dataProcessing"
+import { calculateFeesPerCategory, categoryFeesAsMarkups, timeToDate } from "~/helper/dataProcessing"
 import { type Tid, id } from "~/helper/zodTypes"
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "~/server/api/trpc"
 import { prisma } from "~/server/db"
 import { checkAccountBacking, getReservedAmount } from "~/server/helper/dbCallHelper"
 import { buyItem } from "./items"
-import { ITEM_SECURITY_DEPOSIT } from "~/helper/globalTypes"
+import { BILLING_TOLERANCE, ITEM_SECURITY_DEPOSIT } from "~/helper/globalTypes"
 import { canRevertGroupOrder } from "~/helper/generalFunctions"
 
 const pageSize = 20
@@ -63,7 +63,8 @@ export const grouporderRouter = createTRPCRouter({
         orders: {
           include: {
             user: { select: { id: true, name: true } },
-            items: { include: { item: { include: { categories: true } } } },
+            items: { include: { item: true } },
+            categoryFees: true,
           },
         },
         procurementWishes: {
@@ -206,13 +207,8 @@ export const grouporderRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const group = await ctx.prisma.groupOrder.findUniqueOrThrow({
-        where: { id: input.groupId },
-      })
-      if (group.status !== 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Group Order is already closed" })
-      }
-      await buyItem(ctx.prisma, input.item, ctx.session.user.id, group.id, input.quantity)
+      // checks (in the same transaction) that the group order is still open
+      await buyItem(ctx.prisma, input.item, ctx.session.user.id, input.groupId, input.quantity)
     }),
 
   undoBuyGroupOrderItem: protectedProcedure
@@ -235,6 +231,7 @@ export const grouporderRouter = createTRPCRouter({
         }
         // nothing has been booked yet (see buyItem) - so just remove the reservation
         await tx.itemCategoryMapping.deleteMany({ where: { transactionId: transaction.id } })
+        await tx.transactionCategoryFee.deleteMany({ where: { transactionId: transaction.id } })
         await tx.transaction.delete({ where: { id: transaction.id } })
       })
     }),
@@ -267,19 +264,30 @@ export const grouporderRouter = createTRPCRouter({
         checkAccountBacking(user, requiredBacking + (await getReservedAmount(ctx.prisma, user.id)))
       }
 
-      // one wish per piece, as a wish can contain every item only once
-      const procWishes = await prisma.$transaction(
-        Array.from({ length: input.quantity }, () =>
-          prisma.procurementWish.create({
-            data: {
-              user: { connect: { id: ctx.session.user.id } },
-              GroupOrder: { connect: { id: group.id } },
-              items: { connect: items.map((itm) => ({ id: itm.id })) },
-            },
-          }),
-        ),
-      )
-      return procWishes
+      return ctx.prisma.$transaction(async (tx) => {
+        // claim the group order row first, so it can't be closed between the check and the wishes (see buyItem)
+        const openGroup = await tx.groupOrder.updateMany({
+          where: { id: group.id, status: 0 },
+          data: { status: 0 },
+        })
+        if (openGroup.count === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Group Order is already closed" })
+        }
+        // one wish per piece, as a wish can contain every item only once
+        const procWishes = []
+        for (let i = 0; i < input.quantity; i++) {
+          procWishes.push(
+            await tx.procurementWish.create({
+              data: {
+                user: { connect: { id: ctx.session.user.id } },
+                GroupOrder: { connect: { id: group.id } },
+                items: { connect: items.map((itm) => ({ id: itm.id })) },
+              },
+            }),
+          )
+        }
+        return procWishes
+      })
     }),
 
   undoProcureGroupOrderItem: protectedProcedure
@@ -385,6 +393,8 @@ export const grouporderRouter = createTRPCRouter({
         destination: id,
         // adjusted prices (without fees) of reserved single-item buys, e.g. if there was an offer
         itemBuyPrices: z.array(z.object({ id, price: z.number().min(0) })).default([]),
+        // total the shopper paid (without fees) - all billed prices together have to match it
+        expectedTotal: z.number().min(0),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -392,7 +402,7 @@ export const grouporderRouter = createTRPCRouter({
       const group = await ctx.prisma.groupOrder.findUniqueOrThrow({
         where: { id: input.groupId },
         include: {
-          orders: { include: { items: { include: { categories: true } } } },
+          orders: { include: { categoryFees: true } },
           procurementWishes: { include: { items: { include: { categories: true } } } },
         },
       })
@@ -417,11 +427,8 @@ export const grouporderRouter = createTRPCRouter({
             input.itemBuyPrices.find((itemBuy) => itemBuy.id === order.id)?.price ??
             order.amountWithoutFees ??
             0
-          // categories as they were on the reservation - revertClosed uses the same
-          const fees = calculateFeesPerCategory(
-            price,
-            order.items.flatMap((mapping) => mapping.categories),
-          )
+          // markups as they were on the reservation - revertClosed uses the same
+          const fees = calculateFeesPerCategory(price, categoryFeesAsMarkups(order.categoryFees))
           if (fees.categories.some((cat) => cat.charges !== 0 && !cat.clearingAccountId)) {
             throw new TRPCError({
               code: "METHOD_NOT_SUPPORTED",
@@ -508,6 +515,12 @@ export const grouporderRouter = createTRPCRouter({
           code: "BAD_REQUEST",
           message:
             "User missing at billing! (Seems like a bad internal Error, or a malicious attempt)",
+        })
+      }
+      if (Math.abs(creditOfDest - input.expectedTotal) > BILLING_TOLERANCE) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Billed prices (${creditOfDest.toFixed(2)}€) don't match the total amount (${input.expectedTotal.toFixed(2)}€)`,
         })
       }
 
@@ -616,7 +629,7 @@ export const grouporderRouter = createTRPCRouter({
       const group = await ctx.prisma.groupOrder.findUniqueOrThrow({
         where: { id: input.groupId },
         include: {
-          orders: { include: { procurementItems: { include: { item: { include: { categories: { include: { markupDestination: true } } } } } }, items: { include: { categories: true } }, clearingAccount: true } },
+          orders: { include: { procurementItems: { include: { item: { include: { categories: { include: { markupDestination: true } } } } } }, items: true, categoryFees: true, clearingAccount: true } },
           procurementWishes: { include: { items: { include: { categories: true } } } },
         },
       })
@@ -699,7 +712,7 @@ export const grouporderRouter = createTRPCRouter({
             // fees based on the booked price (may have been adjusted on close)
             const fees = calculateFeesPerCategory(
               transaction.amountWithoutFees ?? 0,
-              transaction.items.flatMap((mapping) => mapping.categories),
+              categoryFeesAsMarkups(transaction.categoryFees),
             )
             for (const cat of fees.categories) {
               if (cat.clearingAccountId && cat.charges !== 0) {

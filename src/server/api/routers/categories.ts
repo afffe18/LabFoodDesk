@@ -60,7 +60,12 @@ export const categoryRouter = createTRPCRouter({
       }
       const oldCategoryWithInclude = await ctx.prisma.category.findUniqueOrThrow({
         where: { id },
-        include: { items: true, procurementItems: true },
+        include: {
+          items: true,
+          procurementItems: true,
+          // open group orders keep their filter on the replacement
+          groupOrdersFiltered: { where: { status: 0 }, select: { id: true } },
+        },
       })
 
       await prisma.$transaction([
@@ -72,6 +77,9 @@ export const categoryRouter = createTRPCRouter({
             items: { connect: oldCategoryWithInclude.items.map((item) => ({ id: item.id })) },
             procurementItems: {
               connect: oldCategoryWithInclude.procurementItems.map((item) => ({ id: item.id })),
+            },
+            groupOrdersFiltered: {
+              connect: oldCategoryWithInclude.groupOrdersFiltered.map((groupOrder) => ({ id: groupOrder.id })),
             },
             ...data,
           },

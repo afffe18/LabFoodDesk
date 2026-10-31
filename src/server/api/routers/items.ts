@@ -302,6 +302,17 @@ export const buyItem = async (
   const totalPriceSingleQty = product.price + fees.total
 
   await prisma.$transaction(async (tx) => {
+    if (groupId) {
+      // claim the group order row before anything else: closing or settling it has to wait for this
+      // transaction (and vice versa), so a reservation can't slip in after the orders were stopped
+      const openGroup = await tx.groupOrder.updateMany({
+        where: { id: groupId, status: 0 },
+        data: { status: 0 },
+      })
+      if (openGroup.count === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Group Order is already closed" })
+      }
+    }
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } })
     checkAccountBacking(user, totalPriceSingleQty * quantity + (await getReservedAmount(tx, userId)))
 
@@ -329,6 +340,16 @@ export const buyItem = async (
       transaction["groupOrder"] = { connect: { id: groupId } }
       transaction.type = 4
       delete transaction.clearingAccount
+      // fees are calculated on close - keep today's markups: until then categories can be edited and their
+      // link to this buy (ItemCategoryMapping) can move to a later buy
+      transaction.categoryFees = {
+        create: product.categories.map((category) => ({
+          categoryId: category.id,
+          markupFixed: category.markupFixed,
+          markupPercentage: category.markupPercentage,
+          markupDestinationId: category.markupDestinationId,
+        })),
+      }
     }
 
     for (let i = 1; i <= quantity; i++) {
