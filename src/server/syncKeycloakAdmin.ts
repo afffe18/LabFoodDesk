@@ -6,10 +6,10 @@ import type { PrismaClient } from "~/generated/prisma/client"
 
 const adminGroup = "LABEATS_ADMIN"
 
-/** Returns undefined if the profile has no groups claim, so a broken response changes nothing. */
+/** Returns undefined if the groups claim is missing or malformed, so a broken response changes nothing. */
 export const isAdminFromGroups = (groups: unknown) => {
-  if (!Array.isArray(groups)) return undefined
-  return groups.some((group) => typeof group === "string" && group.toUpperCase() === adminGroup)
+  if (!Array.isArray(groups) || !groups.every((group) => typeof group === "string")) return undefined
+  return groups.some((group: string) => group.toUpperCase() === adminGroup)
 }
 
 /** Updates the admin right of the user from the Keycloak groups, returns the resulting value. */

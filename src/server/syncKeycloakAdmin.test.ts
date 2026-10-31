@@ -8,6 +8,8 @@ describe("isAdminFromGroups", () => {
     expect(isAdminFromGroups(["users"])).toBe(false)
     expect(isAdminFromGroups([])).toBe(false)
     expect(isAdminFromGroups(undefined)).toBeUndefined()
+    // a malformed claim must not revoke the admin right
+    expect(isAdminFromGroups(["users", 42])).toBeUndefined()
   })
 })
 

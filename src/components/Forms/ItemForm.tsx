@@ -137,7 +137,7 @@ const ItemForm = (props: Props) => {
                   name={field.name}
                   value={field.value}
                   min={0}
-                  onChange={field.onChange}
+                  onChange={(value) => field.onChange(Number.isNaN(value) ? 0 : value)}
                   onBlur={field.onBlur}
                   className="input input-primary w-full max-w-md"
                   placeholder="Pfand"
