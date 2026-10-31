@@ -52,6 +52,7 @@ const cronAction = async () => {
           groupOrderTemplateId: template.id,
           ordersCloseAt: ordersCloseAt.toDate(),
           name: template.name,
+          filterCategoryId: template.defaultCategoryId,
         }
       })
     }

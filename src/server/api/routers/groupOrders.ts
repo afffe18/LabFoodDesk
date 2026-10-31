@@ -162,7 +162,13 @@ export const grouporderRouter = createTRPCRouter({
     }
     const item = await prisma.groupOrder.create({
       data: !!groupOrderTemplate
-        ? { ...payload, GroupOrderTemplate: { connect: { id: groupOrderTemplate.id } } }
+        ? {
+            ...payload,
+            GroupOrderTemplate: { connect: { id: groupOrderTemplate.id } },
+            filterCategory: groupOrderTemplate.defaultCategoryId
+              ? { connect: { id: groupOrderTemplate.defaultCategoryId } }
+              : undefined,
+          }
         : payload,
     })
     return item
@@ -765,7 +771,11 @@ export const grouporderRouter = createTRPCRouter({
     }),
 
   getAllTemplates: protectedProcedure.query(async ({ ctx }) => {
-    const result = await ctx.prisma.groupOrderTemplate.findMany({ where: { active: true } })
+    const result = await ctx.prisma.groupOrderTemplate.findMany({
+      where: { active: true },
+      include: { defaultCategory: { select: { name: true } } },
+      orderBy: [{ weekday: "asc" }, { ordersCloseAt: "asc" }],
+    })
     return result
   }),
 
@@ -786,6 +796,7 @@ export const grouporderRouter = createTRPCRouter({
           weekday: input.weekday,
           ordersCloseAt: timeToDate(input.ordersCloseAt_h, input.ordersCloseAt_min),
           ordersStartsAt: input.ordersStartsAt,
+          defaultCategoryId: input.defaultCategoryId ?? null,
           active: true,
         },
       })
@@ -800,6 +811,7 @@ export const grouporderRouter = createTRPCRouter({
         where: { id: id },
         data: {
           ...inputWithoutID,
+          defaultCategoryId: inputWithoutID.defaultCategoryId ?? null,
           ordersCloseAt: timeToDate(ordersCloseAt_h, ordersCloseAt_min),
         },
       })

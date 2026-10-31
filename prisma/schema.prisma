@@ -84,6 +84,9 @@ model GroupOrderTemplate {
   ordersStartsAt Int          @default(72) // hours before ordersCloseAt when the grouporder gets created
   active         Boolean      @default(true)
   GroupOrders    GroupOrder[]
+  // preselected filter category for group orders created from this template
+  defaultCategory   Category? @relation("groupOrderTemplateDefaultCategory", fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  defaultCategoryId String?
 }
 
 model Category {
@@ -103,6 +106,7 @@ model Category {
   ItemPurchase           ItemCategoryMapping? @relation(fields: [itemPurchaseId], references: [id])
   itemPurchaseId         String?
   groupOrdersFiltered    GroupOrder[]         @relation("groupOrderFilter")
+  groupOrderTemplates    GroupOrderTemplate[] @relation("groupOrderTemplateDefaultCategory")
 }
 
 model ClearingAccount {

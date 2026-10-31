@@ -65,6 +65,8 @@ export const categoryRouter = createTRPCRouter({
           procurementItems: true,
           // open group orders keep their filter on the replacement
           groupOrdersFiltered: { where: { status: 0 }, select: { id: true } },
+          // templates keep their default category on the replacement
+          groupOrderTemplates: { select: { id: true } },
         },
       })
 
@@ -80,6 +82,9 @@ export const categoryRouter = createTRPCRouter({
             },
             groupOrdersFiltered: {
               connect: oldCategoryWithInclude.groupOrdersFiltered.map((groupOrder) => ({ id: groupOrder.id })),
+            },
+            groupOrderTemplates: {
+              connect: oldCategoryWithInclude.groupOrderTemplates.map((template) => ({ id: template.id })),
             },
             ...data,
           },
@@ -105,7 +110,7 @@ export const categoryRouter = createTRPCRouter({
     } else {
       return await ctx.prisma.category.update({
         where: { id: input.id },
-        data: { is_active: false },
+        data: { is_active: false, groupOrderTemplates: { set: [] } },
       })
     }
   }),
